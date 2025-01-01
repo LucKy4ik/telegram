@@ -5,9 +5,11 @@ from bs4 import BeautifulSoup
 import schedule
 import threading
 import time
+import sqlite3
 
 message_id = None
 city = None
+
 #Погода----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 def weather(user_city):
     global city
@@ -34,7 +36,7 @@ def weather(user_city):
 def send_time():
     bot.send_message(message_id, "Wake up!")
 def run_time():
-    schedule.every().day.at("06:30").do(send_time)
+    schedule.every().day.at("06:30").do(send_time) #Запланирование действия
     while True:
         schedule.run_pending()
         time.sleep(1)
@@ -48,6 +50,21 @@ threading.Thread(target=run_time).start() #Параллельный поток
 def start(message):
     global message_id
     message_id = message.chat.id
+
+    conn = sqlite3.connect("user_telegram.sql")
+    cur = conn.cursor()
+
+    cur.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, user_name varchar(50), user_city varchar(50))')
+    conn.commit()
+
+    cur.execute('SELECT COUNT(*) FROM users WHERE user_name = ?', (message.from_user.first_name,))
+    exists = cur.fetchone()[0]
+    if not exists:
+        cur.execute('INSERT INTO users(user_name, user_city) VALUES (?, ?)', (message.from_user.first_name, city))
+        conn.commit()
+    cur.close()
+    conn.close()
+
     bot.send_message(message.chat.id, "Привет, можешь написать свой вопрос и я попробую ответить на него:")
 
 
@@ -62,7 +79,20 @@ def weather_city(message):
 def user_city(message):
     global city
     city = message.text.lower()
+    conn = sqlite3.connect("user_telegram.sql")
+    cur = conn.cursor()
+
+    cur.execute('UPDATE users SET user_city = ? WHERE user_name = ?', (city, message.from_user.first_name))
+    conn.commit()
     bot.send_message(message.chat.id, "Город сохранен")
+    cur.execute('SELECT *FROM users')
+    users = cur.fetchall()
+    info = ''
+    for i in users:
+        info += f'Имя: {i[1]}, city: {i[2]}'
+    print(info)
+    cur.close()
+    conn.close()
 
 
 @bot.message_handler(content_types='text')
@@ -84,6 +114,5 @@ def i_message(message):
     bot.send_message(message.chat.id, gpt_response, "Markdown")
 
     history_chat[user_id].append({"role": "assistant", "content": gpt_response})
-
 
 bot.polling(none_stop=True)
