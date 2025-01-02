@@ -9,7 +9,7 @@ import sqlite3
 
 message_id = None
 city = None
-
+user_name = None
 #Погода----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 def weather(user_city):
     global city
@@ -29,6 +29,12 @@ def weather(user_city):
         return weather_city
     except AttributeError:
         city = None
+        conn = sqlite3.connect("user_telegram.sql")
+        cur = conn.cursor()
+        cur.execute('UPDATE users SET user_city = ? WHERE user_name = ?', (city, user_name))
+        conn.commit()
+        cur.close()
+        conn.close()
         return "Город не найден, попробуйте ввести его снова"
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -36,7 +42,7 @@ def weather(user_city):
 def send_time():
     bot.send_message(message_id, "Wake up!")
 def run_time():
-    schedule.every().day.at("06:30").do(send_time) #Запланирование действия
+    schedule.every().day.at("14:45").do(send_time) #Запланирование действия
     while True:
         schedule.run_pending()
         time.sleep(1)
@@ -49,7 +55,9 @@ threading.Thread(target=run_time).start() #Параллельный поток
 @bot.message_handler(commands=['start'])
 def start(message):
     global message_id
+    global user_name
     message_id = message.chat.id
+    user_name = message.from_user.first_name
 
     conn = sqlite3.connect("user_telegram.sql")
     cur = conn.cursor()
@@ -62,6 +70,14 @@ def start(message):
     if not exists:
         cur.execute('INSERT INTO users(user_name, user_city) VALUES (?, ?)', (message.from_user.first_name, city))
         conn.commit()
+
+    cur.execute('SELECT *FROM users')
+    users = cur.fetchall()
+    print(users) 
+    info = ''
+    for i in users:
+        info += f'Имя: {i[1]}, city: {i[2]}'
+        print(info)
     cur.close()
     conn.close()
 
@@ -70,6 +86,10 @@ def start(message):
 
 @bot.message_handler(commands=['weather'])
 def weather_city(message):
+    conn = sqlite3.connect("user_telegram.sql")
+    cur = conn.cursor()
+    cur.execute('SELECT *FROM users WHERE user_name = ?', (message.from_user.first_name,))
+    city = cur.fetchone()[2]
     if city is not None:
         bot.send_message(message.chat.id, weather(city))
     else:
