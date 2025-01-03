@@ -6,18 +6,26 @@ import schedule
 import threading
 import time
 import sqlite3
+from googletrans import Translator
+import asyncio
 
 message_id = None
 city = None
 user_name = None
-#Погода----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+async def translator1(n_city):
+    translator = Translator()
+    result = await translator.translate(n_city, dest='en')
+    return result.text
+
 def weather(user_city):
     global city
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 YaBrowser/24.12.0.0 Safari/537.36"
             }
-        response = requests.get(f"https://yandex.ru/pogoda/{user_city.lower()}", headers=headers)
+        response = requests.get(f"https://yandex.ru/pogoda/{asyncio.run(translator1(user_city))}", headers=headers)
+        print(asyncio.run(translator1(user_city)).lower())
         soup = BeautifulSoup(response.text, "html.parser")
         # Извлечение данных о погоде
         pogoda = soup.find("div", class_="fact__temp-wrap").find("a",{'aria-label': True}).get_text()
@@ -25,7 +33,7 @@ def weather(user_city):
         weather_condition = soup.find("div", class_="link__feelings fact__feelings").find("div", class_="link__condition day-anchor i-bem").get_text()
         humidity = soup.find("div", class_="term term_orient_v fact__humidity").find("span", class_="a11y-hidden").get_text()
         wind = soup.find("div", class_="fact__props").find("span", class_="wind-speed").get_text()
-        weather_city = f"Температура в {user_city}: {temperature}°C; " +  pogoda[pogoda.index("Ощущается"):].replace("как", "") + "°C\n" + f"Состояние погоды: {weather_condition.strip()}\n" + humidity + "\n" + f"Ветер: {wind}"
+        weather_city = f"Температура: {temperature}°C; " +  pogoda[pogoda.index("Ощущается"):].replace("как", "") + "°C\n" + f"Состояние погоды: {weather_condition.strip()}\n" + humidity + "\n" + f"Ветер: {wind}"
         return weather_city
     except AttributeError:
         city = None
@@ -36,9 +44,7 @@ def weather(user_city):
         cur.close()
         conn.close()
         return "Город не найден, попробуйте ввести его снова"
-#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#Будильник------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 def send_time():
     bot.send_message(message_id, "Wake up!")
 def run_time():
@@ -46,7 +52,6 @@ def run_time():
     while True:
         schedule.run_pending()
         time.sleep(1)
-#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 client = Client()
 history_chat = {}
 bot = telebot.TeleBot('7711898353:AAEU0fXGwCRh1sOHWGrvrF-ILsW-3OySvxU') #
@@ -98,7 +103,7 @@ def weather_city(message):
 
 def user_city(message):
     global city
-    city = message.text.lower()
+    city = message.text
     conn = sqlite3.connect("user_telegram.sql")
     cur = conn.cursor()
 
