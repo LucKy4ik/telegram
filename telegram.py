@@ -8,6 +8,7 @@ import time
 import sqlite3
 from googletrans import Translator
 import asyncio
+import emoji
 
 message_id = None
 city = None
@@ -25,14 +26,13 @@ def weather(user_city):
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 YaBrowser/24.12.0.0 Safari/537.36"
             }
         response = requests.get(f"https://yandex.ru/weather/{asyncio.run(translator1(user_city)).lower()}", headers=headers)
-        print(asyncio.run(translator1(user_city)).lower())
         soup = BeautifulSoup(response.text, "html.parser")
         # Извлечение данных о погоде
         temperature = soup.find("div", class_="temp fact__temp fact__temp_size_s").find("span", class_="temp__value temp__value_with-unit").get_text()
         weather_condition = soup.find("div", class_="link__feelings fact__feelings").find("span", class_="temp__value temp__value_with-unit").get_text()
         humidity = soup.find("div", class_="term term_orient_v fact__humidity").find("span", class_="a11y-hidden").get_text()
         wind = soup.find("div", class_="term term_orient_v fact__wind-speed").find("span", class_="wind-speed").get_text()
-        return f"Температура: {temperature}, Ощущается как: {weather_condition}, Влажность: {humidity}, Ветер: {wind}м/с"   
+        return f"Температура: {temperature}°C{emoji.emojize(':thermometer:')}, но ощущается как: {weather_condition}°C{emoji.emojize(':face_with_rolling_eyes:')}.\n{humidity}\nВетер: {wind}м/с.{emoji.emojize(':dashing_away:')}"   
     except AttributeError:
         print("Ошибка")
         city = None
@@ -45,9 +45,9 @@ def weather(user_city):
         return "Город не найден, попробуйте ввести его снова"
 
 def send_time():
-    bot.send_message(message_id, "Wake up!")
+    bot.send_message(message_id, f"Доброе утро!{emoji.emojize(':sun:')}\nВремя вставать, сейчас 6:30.{emoji.emojize(':six-thirty:')}\nЗа окном {weather(city)}.\nЖелаю тебе удачного дня!{emoji.emojize(':four_leaf_clover:')} Не забудь про сегодняшние планы: None")
 def run_time():
-    schedule.every().day.at("14:45").do(send_time) #Запланирование действия
+    schedule.every().day.at("06:30").do(send_time) #Запланирование действия
     while True:
         schedule.run_pending()
         time.sleep(1)
@@ -80,12 +80,12 @@ def start(message):
     print(users) 
     info = ''
     for i in users:
-        info += f'Имя: {i[1]}, city: {i[2]}'
+        info += f'Имя: {i[1]}, city: {i[2]}\n'
         print(info)
     cur.close()
     conn.close()
 
-    bot.send_message(message.chat.id, "Привет, можешь написать свой вопрос и я попробую ответить на него:")
+    bot.send_message(message.chat.id, f"Привет!{emoji.emojize(':waving_hand:')}\nЯ Ваш виртуальный ассистент, готовый помочь Вам в любых вопросах{emoji.emojize(':robot:')}\nПросто напишите, что Вас интересует, и я с радостью предоставлю нужную информацию или выполню задачу{emoji.emojize(':memo:')}")
 
 
 @bot.message_handler(commands=['weather'])
@@ -118,6 +118,10 @@ def user_city(message):
     cur.close()
     conn.close()
 
+
+@bot.message_handler(commands=['help'])
+def information(message):
+    bot.send_message(message.chat.id, "Если у вас возникли какие-то вопросы, либо нашли ошибку бота, напишите сюда ->@LucKyy0_0")
 
 @bot.message_handler(content_types='text')
 def i_message(message):
