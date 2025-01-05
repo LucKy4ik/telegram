@@ -34,7 +34,6 @@ def weather(user_city):
         wind = soup.find("div", class_="term term_orient_v fact__wind-speed").find("span", class_="wind-speed").get_text()
         return f"Температура: {temperature}°C{emoji.emojize(':thermometer:')}, но ощущается как: {weather_condition}°C{emoji.emojize(':face_with_rolling_eyes:')}.\n{humidity}\nВетер: {wind}м/с.{emoji.emojize(':dashing_away:')}"   
     except AttributeError:
-        print("Ошибка")
         city = None
         conn = sqlite3.connect("user_telegram.sql")
         cur = conn.cursor()
@@ -42,7 +41,7 @@ def weather(user_city):
         conn.commit()
         cur.close()
         conn.close()
-        return "Город не найден, попробуйте ввести его снова"
+        return "Город не найден, попробуйте установить его заново c помощью команды /weather"
 
 def send_time():
     bot.send_message(message_id, f"Доброе утро!{emoji.emojize(':sun:')}\nВремя вставать, сейчас 6:30.{emoji.emojize(':six-thirty:')}\nЗа окном {weather(city)}.\nЖелаю тебе удачного дня!{emoji.emojize(':four_leaf_clover:')} Не забудь про сегодняшние планы: None")
@@ -50,10 +49,10 @@ def run_time():
     schedule.every().day.at("06:30").do(send_time) #Запланирование действия
     while True:
         schedule.run_pending()
-        time.sleep(1)
+        time.sleep(10)
 client = Client()
 history_chat = {}
-bot = telebot.TeleBot('7711898353:AAEU0fXGwCRh1sOHWGrvrF-ILsW-3OySvxU') #
+bot = telebot.TeleBot('7711898353:AAFYy2UEn9EXETPgEpGUgrdubIVgVqWKcuM') 
 threading.Thread(target=run_time).start() #Параллельный поток
 
 @bot.message_handler(commands=['start'])
@@ -85,8 +84,28 @@ def start(message):
     cur.close()
     conn.close()
 
-    bot.send_message(message.chat.id, f"Привет!{emoji.emojize(':waving_hand:')}\nЯ Ваш виртуальный ассистент, готовый помочь Вам в любых вопросах{emoji.emojize(':robot:')}\nПросто напишите, что Вас интересует, и я с радостью предоставлю нужную информацию или выполню задачу{emoji.emojize(':memo:')}")
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).add(telebot.types.KeyboardButton('/menu'))
+    bot.send_message(message.chat.id, f"Привет!{emoji.emojize(':waving_hand:')}\nЯ Ваш виртуальный ассистент, готовый помочь Вам в любых вопросах{emoji.emojize(':robot:')}\nПросто напишите, что Вас интересует, и я с радостью предоставлю нужную информацию или выполню задачу{emoji.emojize(':memo:')}", reply_markup=markup)
 
+
+@bot.message_handler(commands=['menu'])
+def menu(message):
+    markup = telebot.types.InlineKeyboardMarkup()
+    btn1 = telebot.types.InlineKeyboardButton('Узнать погоду', callback_data='weather')
+    btn2 = telebot.types.InlineKeyboardButton('Составить расписание', callback_data='task')
+    btn3 = telebot.types.InlineKeyboardButton('Открыть плейлист', callback_data='music')
+    markup.row(btn1, btn3)
+    markup.row(btn2)
+    bot.send_message(message.chat.id, f"{emoji.emojize(":glowing_star:")} Вы открыли меню-панель! {emoji.emojize(":glowing_star:")}\nДобро пожаловать в мир возможностей! Здесь Вы найдете разнообразные функции, которые помогут Вам максимально эффективно использовать все возможности нашего приложения. Исследуйте, настраивайте и наслаждайтесь удобством, которое предлагает меню. Ваши действия теперь под контролем!", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda callback: True)
+def callback_message(callback):
+    if callback.data == 'weather':
+        bot.send_message(callback.message.chat.id, weather(city))
+    elif callback.data == 'task':
+        bot.send_message(callback.message.chat.id, "Данная функция недоступна")
+    elif callback.data == 'music':
+        bot.send_message(callback.message.chat.id, "Данная функция недоступна")
 
 @bot.message_handler(commands=['weather'])
 def weather_city(message):
