@@ -30,9 +30,9 @@ def weather(user_city):
         # Извлечение данных о погоде
         temperature = soup.find("div", class_="temp fact__temp fact__temp_size_s").find("span", class_="temp__value temp__value_with-unit").get_text()
         weather_condition = soup.find("div", class_="link__feelings fact__feelings").find("span", class_="temp__value temp__value_with-unit").get_text()
-        humidity = soup.find("div", class_="term term_orient_v fact__humidity").find("span", class_="a11y-hidden").get_text()
+        #humidity = soup.find("div", class_="term term_orient_v fact__humidity").find("span", class_="a11y-hidden").get_text()
         wind = soup.find("div", class_="term term_orient_v fact__wind-speed").find("span", class_="wind-speed").get_text()
-        return f"Температура: {temperature}°C{emoji.emojize(':thermometer:')}, но ощущается как: {weather_condition}°C{emoji.emojize(':face_with_rolling_eyes:')}.\n{humidity}\nВетер: {wind}м/с.{emoji.emojize(':dashing_away:')}"   
+        return f"Температура: {temperature}°C{emoji.emojize(':thermometer:')}, но ощущается как {weather_condition}°C{emoji.emojize(':face_with_rolling_eyes:')}.\nВетер: {wind}м/с.{emoji.emojize(':dashing_away:')}"   
     except AttributeError:
         city = None
         conn = sqlite3.connect("user_telegram.sql")
@@ -44,9 +44,14 @@ def weather(user_city):
         return "Город не найден, попробуйте установить его заново c помощью команды /weather"
 
 def send_time():
-    bot.send_message(message_id, f"Доброе утро!{emoji.emojize(':sun:')}\nВремя вставать, сейчас 6:30.{emoji.emojize(':six-thirty:')}\nЗа окном {weather(city)}.\nЖелаю тебе удачного дня!{emoji.emojize(':four_leaf_clover:')} Не забудь про сегодняшние планы: None")
+    global user_name
+    conn = sqlite3.connect("user_telegram.sql")
+    cur = conn.cursor()
+    cur.execute('SELECT *FROM users WHERE user_name = ?', (user_name,))
+    city = cur.fetchone()[2]
+    bot.send_message(message_id, f"Доброе утро!{emoji.emojize(':sun:')}\nВремя вставать, сейчас 6:30.{emoji.emojize(':six-thirty:')}\nЗа окном: {weather(city)}.\nЖелаю тебе удачного дня!{emoji.emojize(':four_leaf_clover:')} Не забудь про сегодняшние планы: None")
 def run_time():
-    schedule.every().day.at("06:30").do(send_time) #Запланирование действия
+    schedule.every().day.at("20:30").do(send_time) #Запланирование действия
     while True:
         schedule.run_pending()
         time.sleep(10)
@@ -73,13 +78,12 @@ def start(message):
     if not exists:
         cur.execute('INSERT INTO users(user_name, user_city) VALUES (?, ?)', (message.from_user.first_name, city))
         conn.commit()
-
     cur.execute('SELECT *FROM users')
     users = cur.fetchall()
     print(users) 
     info = ''
     for i in users:
-        info += f'Имя: {i[1]}, city: {i[2]}\n'
+        info += f'Имя: {i[1]}, city: {i[2]}'
         print(info)
     cur.close()
     conn.close()
@@ -100,13 +104,18 @@ def menu(message):
 
 @bot.callback_query_handler(func=lambda callback: True)
 def callback_message(callback):
+    conn = sqlite3.connect("user_telegram.sql")
+    cur = conn.cursor()
+    cur.execute('SELECT *FROM users WHERE user_name = ?', (callback.from_user.first_name,))
+    city = cur.fetchone()[2]
     if callback.data == 'weather':
         bot.send_message(callback.message.chat.id, weather(city))
     elif callback.data == 'task':
         bot.send_message(callback.message.chat.id, "Данная функция недоступна")
     elif callback.data == 'music':
         bot.send_message(callback.message.chat.id, "Данная функция недоступна")
-
+    cur.close()
+    conn.close()
 @bot.message_handler(commands=['weather'])
 def weather_city(message):
     conn = sqlite3.connect("user_telegram.sql")
