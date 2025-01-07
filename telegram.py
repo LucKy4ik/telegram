@@ -10,17 +10,12 @@ from googletrans import Translator
 import asyncio
 import emoji
 
-message_id = None
-city = None
-user_name = None
-
 async def translator1(n_city):
     translator = Translator()
     result = await translator.translate(f"{n_city} (город)", dest='en')
     return result.text.replace(' (city)', '')
 
-def weather(user_city):
-    global city
+def weather(user_city, user_name):
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 YaBrowser/24.12.0.0 Safari/537.36"
@@ -34,10 +29,10 @@ def weather(user_city):
         wind = soup.find("div", class_="term term_orient_v fact__wind-speed").find("span", class_="wind-speed").get_text()
         return f"Температура: {temperature}°C{emoji.emojize(':thermometer:')}, но ощущается как {weather_condition}°C{emoji.emojize(':face_with_rolling_eyes:')}.\nВетер: {wind}м/с.{emoji.emojize(':dashing_away:')}"   
     except AttributeError:
-        city = None
         conn = sqlite3.connect("user_telegram.sql")
         cur = conn.cursor()
-        cur.execute('UPDATE users SET user_city = ? WHERE user_name = ?', (city, user_name))
+        cur.execute('')
+        cur.execute('UPDATE users SET user_city = ? WHERE user_name = ?', (None, user_name))
         conn.commit()
         cur.close()
         conn.close()
@@ -47,11 +42,14 @@ def send_time():
     global user_name
     conn = sqlite3.connect("user_telegram.sql")
     cur = conn.cursor()
-    cur.execute('SELECT *FROM users WHERE user_name = ?', (user_name,))
-    city = cur.fetchone()[2]
-    bot.send_message(message_id, f"Доброе утро!{emoji.emojize(':sun:')}\nВремя вставать, сейчас 6:30.{emoji.emojize(':six-thirty:')}\nЗа окном: {weather(city)}.\nЖелаю тебе удачного дня!{emoji.emojize(':four_leaf_clover:')} Не забудь про сегодняшние планы: None")
+    cur.execute('SELECT *FROM users')
+    users = cur.fetchall()
+    for i in range(len(users)):
+        bot.send_message(users[i][2], f"Доброе утро!{emoji.emojize(':sun:')}\nВремя вставать, сейчас 6:30.{emoji.emojize(':six-thirty:')}\nЗа окном: {weather(users[i][3], users[i][1])}.\nЖелаю тебе удачного дня!{emoji.emojize(':four_leaf_clover:')} Не забудь про сегодняшние планы: None")
+    cur.close()
+    conn.close()
 def run_time():
-    schedule.every().day.at("20:30").do(send_time) #Запланирование действия
+    schedule.every().day.at("22:10").do(send_time) #Запланирование действия
     while True:
         schedule.run_pending()
         time.sleep(10)
@@ -62,29 +60,23 @@ threading.Thread(target=run_time).start() #Параллельный поток
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    global message_id
     global user_name
-    message_id = message.chat.id
     user_name = message.from_user.first_name
 
     conn = sqlite3.connect("user_telegram.sql")
     cur = conn.cursor()
 
-    cur.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, user_name varchar(50), user_city varchar(50))')
+    cur.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, user_name varchar(50), message_id varchar(50), user_city varchar(50))')
     conn.commit()
 
     cur.execute('SELECT COUNT(*) FROM users WHERE user_name = ?', (message.from_user.first_name,))
     exists = cur.fetchone()[0]
     if not exists:
-        cur.execute('INSERT INTO users(user_name, user_city) VALUES (?, ?)', (message.from_user.first_name, city))
+        cur.execute('INSERT INTO users(user_name, message_id ,user_city) VALUES (?, ?, ?)', (message.from_user.first_name, message.chat.id, None))
         conn.commit()
     cur.execute('SELECT *FROM users')
     users = cur.fetchall()
     print(users) 
-    info = ''
-    for i in users:
-        info += f'Имя: {i[1]}, city: {i[2]}'
-        print(info)
     cur.close()
     conn.close()
 
@@ -107,9 +99,8 @@ def callback_message(callback):
     conn = sqlite3.connect("user_telegram.sql")
     cur = conn.cursor()
     cur.execute('SELECT *FROM users WHERE user_name = ?', (callback.from_user.first_name,))
-    city = cur.fetchone()[2]
     if callback.data == 'weather':
-        bot.send_message(callback.message.chat.id, weather(city))
+        bot.send_message(callback.message.chat.id, weather(cur.fetchone()[3], callback.from_user.first_name)) #city = cur.fetchone()[2]
     elif callback.data == 'task':
         bot.send_message(callback.message.chat.id, "Данная функция недоступна")
     elif callback.data == 'music':
@@ -121,28 +112,20 @@ def weather_city(message):
     conn = sqlite3.connect("user_telegram.sql")
     cur = conn.cursor()
     cur.execute('SELECT *FROM users WHERE user_name = ?', (message.from_user.first_name,))
-    city = cur.fetchone()[2]
+    city = cur.fetchone()[3]
     if city is not None:
-        bot.send_message(message.chat.id, weather(city))
+        bot.send_message(message.chat.id, weather(city, message.from_user.first_name))
     else:
         bot.send_message(message.chat.id, "Напишите ваш город:")
         bot.register_next_step_handler(message, user_city)
 
 def user_city(message):
-    global city
-    city = message.text
     conn = sqlite3.connect("user_telegram.sql")
     cur = conn.cursor()
 
-    cur.execute('UPDATE users SET user_city = ? WHERE user_name = ?', (city, message.from_user.first_name))
+    cur.execute('UPDATE users SET user_city = ? WHERE user_name = ?', (message.text, message.from_user.first_name)) #city = message.text
     conn.commit()
     bot.send_message(message.chat.id, "Город сохранен")
-    cur.execute('SELECT *FROM users')
-    users = cur.fetchall()
-    info = ''
-    for i in users:
-        info += f'Имя: {i[1]}, city: {i[2]}\n'
-    print(info)
     cur.close()
     conn.close()
 
