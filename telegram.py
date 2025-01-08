@@ -49,7 +49,7 @@ def send_time():
     cur.close()
     conn.close()
 def run_time():
-    schedule.every().day.at("22:10").do(send_time) #Запланирование действия
+    schedule.every().day.at("06:30").do(send_time) #Запланирование действия
     while True:
         schedule.run_pending()
         time.sleep(10)
@@ -89,9 +89,9 @@ def menu(message):
     markup = telebot.types.InlineKeyboardMarkup()
     btn1 = telebot.types.InlineKeyboardButton('Узнать погоду', callback_data='weather')
     btn2 = telebot.types.InlineKeyboardButton('Составить расписание', callback_data='task')
-    btn3 = telebot.types.InlineKeyboardButton('Открыть плейлист', callback_data='music')
-    markup.row(btn1, btn3)
-    markup.row(btn2)
+    btn3 = telebot.types.InlineKeyboardButton('Открыть электронный дневник', callback_data='diary')
+    markup.row(btn1, btn2)
+    markup.row(btn3)
     bot.send_message(message.chat.id, f"{emoji.emojize(":glowing_star:")} Вы открыли меню-панель! {emoji.emojize(":glowing_star:")}\nДобро пожаловать в мир возможностей! Здесь Вы найдете разнообразные функции, которые помогут Вам максимально эффективно использовать все возможности нашего приложения. Исследуйте, настраивайте и наслаждайтесь удобством, которое предлагает меню. Ваши действия теперь под контролем!", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda callback: True)
@@ -103,7 +103,33 @@ def callback_message(callback):
         bot.send_message(callback.message.chat.id, weather(cur.fetchone()[3], callback.from_user.first_name)) #city = cur.fetchone()[2]
     elif callback.data == 'task':
         bot.send_message(callback.message.chat.id, "Данная функция недоступна")
-    elif callback.data == 'music':
+    elif callback.data == 'diary':
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 YaBrowser/24.12.0.0 Safari/537.36"
+            }
+        login_url = 'https://elschool.ru/logon/index' #URL для авторизации
+        credentials = { #Учетные данные
+            'login': 'Salimhanov_Dzhamil',
+            'password': 'RQWf7rbSG'
+        }
+        session = requests.Session()
+        session.headers.update(headers)
+        response =  session.post(login_url, data=credentials)
+        if response.ok:
+            bot.send_message(callback.message.chat.id, "Успешно авторизовались!")
+            user_data_url = 'https://elschool.ru/users/privateoffice'
+            user_data_response = session.get(user_data_url, headers=headers)
+
+            soup = BeautifulSoup(user_data_response.text, 'html.parser')
+            diary = soup.find('a', class_="d-block")
+            href_value = diary['href']
+            user_grades_url = f'https://elschool.ru/users/diaries/grades?rooId={href_value[11:href_value.find('/s', 11)]}&instituteId={href_value[href_value.find('/s') + 9:href_value.find('/c', 20)]}&departmentId={href_value[href_value.find('/classes/') + 9: ]}&pupilId={soup.find('td', class_='personal-data__info-value personal-data__info-value_bold').get_text()}'
+            
+            user_grades_response = session.get(user_grades_url, headers=headers)
+            soup = BeautifulSoup(user_grades_response.text, 'html.parser')
+            td = soup.find('tbody')
+        else:
+            bot.send_message(callback.message.chat.id, 'Авторизация не прошла')
         bot.send_message(callback.message.chat.id, "Данная функция недоступна")
     cur.close()
     conn.close()
@@ -136,7 +162,7 @@ def information(message):
 
 @bot.message_handler(content_types='text')
 def i_message(message):
-    user_text = message.text
+    user_text = message.text + "\nНапиши ответ на русском"
     user_id = message.from_user.id
 
     if user_id not in history_chat:
