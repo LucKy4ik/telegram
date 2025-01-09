@@ -31,7 +31,6 @@ def weather(user_city, user_name):
     except AttributeError:
         conn = sqlite3.connect("user_telegram.sql")
         cur = conn.cursor()
-        cur.execute('')
         cur.execute('UPDATE users SET user_city = ? WHERE user_name = ?', (None, user_name))
         conn.commit()
         cur.close()
@@ -66,13 +65,13 @@ def start(message):
     conn = sqlite3.connect("user_telegram.sql")
     cur = conn.cursor()
 
-    cur.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, user_name varchar(50), message_id varchar(50), user_city varchar(50))')
+    cur.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, user_name varchar(50), message_id varchar(50), user_city varchar(50), user_login varchar(50), user_password varchar(50))')
     conn.commit()
 
     cur.execute('SELECT COUNT(*) FROM users WHERE user_name = ?', (message.from_user.first_name,))
     exists = cur.fetchone()[0]
     if not exists:
-        cur.execute('INSERT INTO users(user_name, message_id ,user_city) VALUES (?, ?, ?)', (message.from_user.first_name, message.chat.id, None))
+        cur.execute('INSERT INTO users(user_name, message_id, user_city, user_login, user_password) VALUES (?, ?, ?, ?, ?)', (message.from_user.first_name, message.chat.id, None, None, None))
         conn.commit()
     cur.execute('SELECT *FROM users')
     users = cur.fetchall()
@@ -88,7 +87,7 @@ def start(message):
 def menu(message):
     markup = telebot.types.InlineKeyboardMarkup()
     btn1 = telebot.types.InlineKeyboardButton('Узнать погоду', callback_data='weather')
-    btn2 = telebot.types.InlineKeyboardButton('Составить расписание', callback_data='task')
+    btn2 = telebot.types.InlineKeyboardButton('Задать вопрос', callback_data='question')
     btn3 = telebot.types.InlineKeyboardButton('Открыть электронный дневник', callback_data='diary')
     markup.row(btn1, btn2)
     markup.row(btn3)
@@ -100,43 +99,72 @@ def callback_message(callback):
     cur = conn.cursor()
     cur.execute('SELECT *FROM users WHERE user_name = ?', (callback.from_user.first_name,))
     if callback.data == 'weather':
-        bot.send_message(callback.message.chat.id, weather(cur.fetchone()[3], callback.from_user.first_name)) #city = cur.fetchone()[2]
-    elif callback.data == 'task':
-        bot.send_message(callback.message.chat.id, "Данная функция недоступна")
+        bot.send_message(callback.message.chat.id, weather(cur.fetchone()[3], callback.from_user.first_name)) #city = cur.fetchone()[3]
+    elif callback.data == 'question':
+        bot.send_message(callback.message.chat.id, "Привет!\nВы можете задать любой вопрос нашему телеграмм-боту.\nПожалуйста, убедитесь, что Ваш вопрос сформулирован чётко и корректно, чтобы вы смогли быстрее и точнее получить ответ.\nЖдём Ваши Вопросы!")
     elif callback.data == 'diary':
-        headers = {
+        user_data = cur.fetchone()
+        try:
+            headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 YaBrowser/24.12.0.0 Safari/537.36"
             }
-        login_url = 'https://elschool.ru/logon/index' #URL для авторизации
-        credentials = { #Учетные данные
-            'login': 'Salimhanov_Dzhamil',
-            'password': 'RQWf7rbSG'
-        }
-        session = requests.Session()
-        session.headers.update(headers)
-        response =  session.post(login_url, data=credentials)
-        if response.ok:
-            bot.send_message(callback.message.chat.id, "Успешно авторизовались!")
-            user_data_url = 'https://elschool.ru/users/privateoffice'
-            user_data_response = session.get(user_data_url, headers=headers)
-
-            soup = BeautifulSoup(user_data_response.text, 'html.parser')
-            diary = soup.find('a', class_="d-block")
-            href_value = diary['href']
-            user_grades_url = f'https://elschool.ru/users/diaries/grades?rooId={href_value[11:href_value.find('/s', 11)]}&instituteId={href_value[href_value.find('/s') + 9:href_value.find('/c', 20)]}&departmentId={href_value[href_value.find('/classes/') + 9: ]}&pupilId={soup.find('td', class_='personal-data__info-value personal-data__info-value_bold').get_text()}'
+            login_url = 'https://elschool.ru/logon/index' #URL для авторизации
+            credentials = { #Учетные данные
+                'login': f'{user_data[4]}',
+                'password': f'{user_data[5]}'
+                }
+            session = requests.Session()
+            session.headers.update(headers)
+            response =  session.post(login_url, data=credentials)
+            if response.ok:
+                marks_info = str()
+                bot.send_message(callback.message.chat.id, "Успешно авторизовались!")
+                user_data_url = 'https://elschool.ru/users/privateoffice'
+                user_data_response = session.get(user_data_url, headers=headers)
+                
+                soup = BeautifulSoup(user_data_response.text, 'html.parser')
+                diary = soup.find('a', class_="d-block")
+                href_value = diary['href']
+                user_grades_url = f'https://elschool.ru/users/diaries/grades?rooId={href_value[11:href_value.find('/s', 11)]}&instituteId={href_value[href_value.find('/s') + 9:href_value.find('/c', 20)]}&departmentId={href_value[href_value.find('/classes/') + 9: ]}&pupilId={soup.find('td', class_='personal-data__info-value personal-data__info-value_bold').get_text()}'
             
-            user_grades_response = session.get(user_grades_url, headers=headers)
-            soup = BeautifulSoup(user_grades_response.text, 'html.parser')
-            num_l = soup.find('tbody').find_all('tr')
-            for num in num_l:
-                lesson_value = num.get('lesson')
-                name_l = soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_= 'grades-lesson').get_text()
-                average_mark = soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_= 'grades-average mark5').get_text() if soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_= 'grades-average mark5') else ''
-        else:
-            bot.send_message(callback.message.chat.id, 'Авторизация не прошла')
-        bot.send_message(callback.message.chat.id, "Данная функция недоступна")
+                user_grades_response = session.get(user_grades_url, headers=headers)
+                soup = BeautifulSoup(user_grades_response.text, 'html.parser')
+                num_l = soup.find('tbody').find_all('tr')
+                for num in num_l:
+                    lesson_value = num.get('lesson')
+                    name_l = soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_= 'grades-lesson').get_text()
+                    average_mark = soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_= 'grades-average mark5').get_text() if soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_= 'grades-average mark5') else ''
+                    marks_info += name_l + ": " + average_mark + '\n'
+                bot.send_message(callback.message.chat.id, marks_info)
+        except TypeError:
+            bot.send_message(callback.message.chat.id, 'Авторизация не прошла.\nЗарегистрируйте свои данные с помощью команды /elschool, чтоб в будущем вы могли пользоваться данной функцией.')
     cur.close()
     conn.close()
+
+@bot.message_handler(commands=['elschool'])
+def reg_elshool(message):
+    bot.send_message(message.chat.id, "Напишите ваш логин:")
+    bot.register_next_step_handler(message, reg_login)
+
+def reg_login(message):
+    conn = sqlite3.connect("user_telegram.sql")
+    cur = conn.cursor()
+    cur.execute('UPDATE users SET user_login = ? WHERE user_name = ?', (message.text, message.from_user.first_name))
+    conn.commit()
+    cur.close()
+    conn.close()
+    bot.send_message(message.chat.id, "Напишите ваш пароль:")
+    bot.register_next_step_handler(message, reg_pass)
+
+def reg_pass(message):
+    conn = sqlite3.connect("user_telegram.sql")
+    cur = conn.cursor()
+    cur.execute('UPDATE users SET user_password = ? WHERE user_name = ?', (message.text, message.from_user.first_name))
+    conn.commit()
+    bot.send_message(message.chat.id, "Данные успешно сохранены.")
+    cur.close()
+    conn.close()
+
 @bot.message_handler(commands=['weather'])
 def weather_city(message):
     conn = sqlite3.connect("user_telegram.sql")
@@ -145,9 +173,13 @@ def weather_city(message):
     city = cur.fetchone()[3]
     if city is not None:
         bot.send_message(message.chat.id, weather(city, message.from_user.first_name))
+        cur.close()
+        conn.close()
     else:
         bot.send_message(message.chat.id, "Напишите ваш город:")
         bot.register_next_step_handler(message, user_city)
+        cur.close()
+        conn.close()
 
 def user_city(message):
     conn = sqlite3.connect("user_telegram.sql")
@@ -166,7 +198,7 @@ def information(message):
 
 @bot.message_handler(content_types='text')
 def i_message(message):
-    user_text = message.text + "\nНапиши ответ на русском"
+    user_text = message.text + "\nНапиши ответ на русском!"
     user_id = message.from_user.id
 
     if user_id not in history_chat:
