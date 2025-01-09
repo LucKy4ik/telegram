@@ -127,7 +127,11 @@ def callback_message(callback):
             
             user_grades_response = session.get(user_grades_url, headers=headers)
             soup = BeautifulSoup(user_grades_response.text, 'html.parser')
-            td = soup.find('tbody')
+            num_l = soup.find('tbody').find_all('tr')
+            for num in num_l:
+                lesson_value = num.get('lesson')
+                name_l = soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_= 'grades-lesson').get_text()
+                average_mark = soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_= 'grades-average mark5').get_text() if soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_= 'grades-average mark5') else ''
         else:
             bot.send_message(callback.message.chat.id, 'Авторизация не прошла')
         bot.send_message(callback.message.chat.id, "Данная функция недоступна")
