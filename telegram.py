@@ -9,6 +9,7 @@ import sqlite3
 from googletrans import Translator
 import asyncio
 import emoji
+import re
 
 async def translator1(n_city):
     translator = Translator()
@@ -65,7 +66,7 @@ def start(message):
     conn = sqlite3.connect("user_telegram.sql")
     cur = conn.cursor()
 
-    cur.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, user_name varchar(50), message_id varchar(50), user_city varchar(50), user_login varchar(50), user_password varchar(50))')
+    cur.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, user_name varchar(50), message_id varchar(50), user_city varchar(50), user_login varchar(50), user_password varchar(50), verify BOOLEAN DEFAULT FALSE)')
     conn.commit()
 
     cur.execute('SELECT COUNT(*) FROM users WHERE user_name = ?', (message.from_user.first_name,))
@@ -80,6 +81,8 @@ def start(message):
     conn.close()
 
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).add(telebot.types.KeyboardButton('/menu'))
+    markup.add(telebot.types.KeyboardButton('/weather'))
+    markup.add(telebot.types.KeyboardButton('/help'))
     bot.send_message(message.chat.id, f"Привет!{emoji.emojize(':waving_hand:')}\nЯ Ваш виртуальный ассистент, готовый помочь Вам в любых вопросах{emoji.emojize(':robot:')}\nПросто напишите, что Вас интересует, и я с радостью предоставлю нужную информацию или выполню задачу{emoji.emojize(':memo:')}", reply_markup=markup)
 
 
@@ -95,6 +98,9 @@ def menu(message):
 
 @bot.callback_query_handler(func=lambda callback: True)
 def callback_message(callback):
+    headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 YaBrowser/24.12.0.0 Safari/537.36"
+            }
     conn = sqlite3.connect("user_telegram.sql")
     cur = conn.cursor()
     cur.execute('SELECT *FROM users WHERE user_name = ?', (callback.from_user.first_name,))
@@ -104,10 +110,12 @@ def callback_message(callback):
         bot.send_message(callback.message.chat.id, "Привет!\nВы можете задать любой вопрос нашему телеграмм-боту.\nПожалуйста, убедитесь, что Ваш вопрос сформулирован чётко и корректно, чтобы вы смогли быстрее и точнее получить ответ.\nЖдём Ваши Вопросы!")
     elif callback.data == 'diary':
         user_data = cur.fetchone()
-        try:
-            headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 YaBrowser/24.12.0.0 Safari/537.36"
-            }
+        if user_data[6]:
+            markup = telebot.types.InlineKeyboardMarkup()
+            markup.add(telebot.types.InlineKeyboardButton('Табель', callback_data = 'report_card'))
+            markup.add(telebot.types.InlineKeyboardButton('Определенный предмет', callback_data = 'school_subject'))
+            bot.send_message(callback.message.chat.id, f"{emoji.emojize(':crystal_ball:')}{emoji.emojize(':minus:')}{emoji.emojize(':sparkles:')}Главное меню{emoji.emojize(':sparkles:')}{emoji.emojize(':minus:')}{emoji.emojize(':crystal_ball:')}", reply_markup=markup)
+        else:
             login_url = 'https://elschool.ru/logon/index' #URL для авторизации
             credentials = { #Учетные данные
                 'login': f'{user_data[4]}',
@@ -116,28 +124,49 @@ def callback_message(callback):
             session = requests.Session()
             session.headers.update(headers)
             response =  session.post(login_url, data=credentials)
-            if response.ok:
-                marks_info = str()
-                bot.send_message(callback.message.chat.id, "Успешно авторизовались!")
-                user_data_url = 'https://elschool.ru/users/privateoffice'
-                user_data_response = session.get(user_data_url, headers=headers)
+            if response.ok and user_data[4] is not None or user_data[5] is not None:
+                bot.send_message(callback.message.chat.id, "Успешная авторизация!\nТеперь вы можете использовать данную функцию")
+                cur.execute('UPDATE users SET verify = ? WHERE user_name = ?', (True, callback.from_user.first_name))
+                conn.commit()
+            else:
+                bot.send_message(callback.message.chat.id, "Авторизация не прошла.\nЗарегистрируйте свои данные с помощью команды /elschool, чтоб в будущем вы могли пользоваться данной функцией.")
+    elif callback.data =='report_card':
+        try:
+            marks_info = str()
+            user_data = cur.fetchone()
+            login_url = 'https://elschool.ru/logon/index' #URL для авторизации
+            credentials = { #Учетные данные
+                'login': f'{user_data[4]}',
+                'password': f'{user_data[5]}'
+                }
+            session = requests.Session()
+            session.headers.update(headers)
+            response =  session.post(login_url, data=credentials)
+            user_data_url = 'https://elschool.ru/users/privateoffice'
+            user_data_response = session.get(user_data_url, headers=headers)
+                    
+            soup = BeautifulSoup(user_data_response.text, 'html.parser')
+            diary = soup.find('a', class_="d-block")
+            href_value = diary['href']
+            user_grades_url = f'https://elschool.ru/users/diaries/grades?rooId={href_value[11:href_value.find('/s', 11)]}&instituteId={href_value[href_value.find('/s') + 9:href_value.find('/c', 20)]}&departmentId={href_value[href_value.find('/classes/') + 9: ]}&pupilId={soup.find('td', class_='personal-data__info-value personal-data__info-value_bold').get_text()}'
                 
-                soup = BeautifulSoup(user_data_response.text, 'html.parser')
-                diary = soup.find('a', class_="d-block")
-                href_value = diary['href']
-                user_grades_url = f'https://elschool.ru/users/diaries/grades?rooId={href_value[11:href_value.find('/s', 11)]}&instituteId={href_value[href_value.find('/s') + 9:href_value.find('/c', 20)]}&departmentId={href_value[href_value.find('/classes/') + 9: ]}&pupilId={soup.find('td', class_='personal-data__info-value personal-data__info-value_bold').get_text()}'
-            
-                user_grades_response = session.get(user_grades_url, headers=headers)
-                soup = BeautifulSoup(user_grades_response.text, 'html.parser')
-                num_l = soup.find('tbody').find_all('tr')
-                for num in num_l:
-                    lesson_value = num.get('lesson')
-                    name_l = soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_= 'grades-lesson').get_text()
-                    average_mark = soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_= 'grades-average mark5').get_text() if soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_= 'grades-average mark5') else ''
-                    marks_info += name_l + ": " + average_mark + '\n'
-                bot.send_message(callback.message.chat.id, marks_info)
+            user_grades_response = session.get(user_grades_url, headers=headers)
+            soup = BeautifulSoup(user_grades_response.text, 'html.parser')
+            num_l = soup.find('tbody').find_all('tr')
+            for num in num_l:
+                lesson_value = num.get('lesson')
+                name_l = soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_= 'grades-lesson').get_text()
+                average_mark = soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_=re.compile(r'grades-average mark')).get_text() if soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_=re.compile(r'grades-average mark')) else ''
+                #marks = soup.find('tr', {'lesson': f'{lesson_value}'}).find_all('span', class_='mark-span')
+                #marks_l = [mark.get_text() for mark in marks]
+                marks_info += f"***{name_l}***({average_mark}):\n"
+            bot.send_message(callback.message.chat.id, marks_info, "Markdown")
         except TypeError:
-            bot.send_message(callback.message.chat.id, 'Авторизация не прошла.\nЗарегистрируйте свои данные с помощью команды /elschool, чтоб в будущем вы могли пользоваться данной функцией.')
+            bot.send_message(callback.message.chat.id, f"{emoji.emojize(':sparkles:')}На сервере произошли технические {emoji.emojize(':chocolate_bar:')}шоколадки{emoji.emojize(':chocolate_bar:')}{emoji.emojize(':sparkles:')}.\nПроверьте, правильно ли указаны ваши данные от Elschool")
+            cur.execute('UPDATE users SET verify = ? WHERE user_name = ?', (False, callback.from_user.first_name))
+            conn.commit()
+    elif callback.data =='school_subject':
+        pass
     cur.close()
     conn.close()
 
