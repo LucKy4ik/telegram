@@ -30,7 +30,7 @@ def weather(user_city, user_name):
         wind = soup.find("div", class_="term term_orient_v fact__wind-speed").find("span", class_="wind-speed").get_text()
         return f"Температура: {temperature}°C{emoji.emojize(':thermometer:')}, но ощущается как {weather_condition}°C{emoji.emojize(':face_with_rolling_eyes:')}.\nВетер: {wind}м/с.{emoji.emojize(':dashing_away:')}"   
     except AttributeError:
-        conn = sqlite3.connect("user_telegram.sql")
+        conn = sqlite3.connect("users_telegram.sql")
         cur = conn.cursor()
         cur.execute('UPDATE users SET user_city = ? WHERE user_name = ?', (None, user_name))
         conn.commit()
@@ -40,16 +40,16 @@ def weather(user_city, user_name):
 
 def send_time():
     global user_name
-    conn = sqlite3.connect("user_telegram.sql")
+    conn = sqlite3.connect("users_telegram.sql")
     cur = conn.cursor()
     cur.execute('SELECT *FROM users')
     users = cur.fetchall()
     for i in range(len(users)):
-        bot.send_message(users[i][2], f"Доброе утро!{emoji.emojize(':sun:')}\nВремя вставать, сейчас 6:30.{emoji.emojize(':six-thirty:')}\nЗа окном: {weather(users[i][3], users[i][1])}.\nЖелаю тебе удачного дня!{emoji.emojize(':four_leaf_clover:')} Не забудь про сегодняшние планы: None")
+        bot.send_message(users[i][2], f"Доброе утро!{emoji.emojize(':sun:')}\nВремя вставать, сейчас 6:30.{emoji.emojize(':six-thirty:')}\n{weather(users[i][3], users[i][1]) if weather(users[i][3], users[i][1]) !=  "Город не найден, попробуйте установить его заново c помощью команды /weather" else 'Чтобы я смог оповещать вас о погоде, вам нужно зарегистрировать ваш город, с помощью команды /weather'}.\nЖелаю тебе удачного дня!{emoji.emojize(':four_leaf_clover:')} Не забудь про сегодняшние планы!")
     cur.close()
     conn.close()
 def run_time():
-    schedule.every().day.at("06:30").do(send_time) #Запланирование действия
+    schedule.every().day.at("19:32").do(send_time) #Запланирование действия
     while True:
         schedule.run_pending()
         time.sleep(10)
@@ -63,7 +63,7 @@ def start(message):
     global user_name
     user_name = message.from_user.first_name
 
-    conn = sqlite3.connect("user_telegram.sql")
+    conn = sqlite3.connect("users_telegram.sql")
     cur = conn.cursor()
 
     cur.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, user_name varchar(50), message_id varchar(50), user_city varchar(50), user_login varchar(50), user_password varchar(50), user_url_el varchar(50))')
@@ -94,7 +94,8 @@ def menu(message):
 
 @bot.callback_query_handler(func=lambda callback: True)
 def callback_message(callback):
-    conn = sqlite3.connect("user_telegram.sql")
+    marks_info = str()
+    conn = sqlite3.connect("users_telegram.sql")
     cur = conn.cursor()
     cur.execute('SELECT *FROM users WHERE user_name = ?', (callback.from_user.first_name,))
     user_data = cur.fetchone()
@@ -108,14 +109,84 @@ def callback_message(callback):
     elif callback.data == 'diary':
         bot.delete_message(callback.message.chat.id, callback.message.message_id)
         if user_data[6] is not None:
-            markup = telebot.types.InlineKeyboardMarkup()
-            markup.add(telebot.types.InlineKeyboardButton('Табель', callback_data = 'report_card'))
-            markup.row(telebot.types.InlineKeyboardButton('1 Полугодие', callback_data = 'first'), telebot.types.InlineKeyboardButton('2 Полугодие', callback_data = 'second'))
-            markup.add(telebot.types.InlineKeyboardButton('Табель с оценками', callback_data = 'report_card_with_grades'))
-            markup.add(telebot.types.InlineKeyboardButton('1 Полугодие', callback_data = 'first'), telebot.types.InlineKeyboardButton('2 Полугодие', callback_data = 'second'))
-            bot.send_message(callback.message.chat.id, f"{emoji.emojize(':crystal_ball:')}{emoji.emojize(':minus:')}{emoji.emojize(':sparkles:')}Главное меню{emoji.emojize(':sparkles:')}{emoji.emojize(':minus:')}{emoji.emojize(':crystal_ball:')}", reply_markup=markup)
+            try:
+                login_url = 'https://elschool.ru/logon/index' #URL для авторизации
+                credentials = { #Учетные данные
+                    'login': f'{user_data[4]}',
+                    'password': f'{user_data[5]}'
+                    }
+                session = requests.Session()
+                session.headers.update(headers)
+                session.post(login_url, data=credentials)
+
+                user_data_url = 'https://elschool.ru/users/privateoffice'
+                user_data_response = session.get(user_data_url, headers=headers)
+                        
+                conn1 = sqlite3.connect("users_elshool.sql") 
+                cur1 = conn1.cursor()
+                cur1.execute('CREATE TABLE IF NOT EXISTS users_info_el (id INTEGER PRIMARY KEY AUTOINCREMENT, user_name varchar(50), mark_1 TEXT, mark_2 TEXT, mark_3 TEXT, mark_4 TEXT, marks_1 TEXT, marks_2 TEXT, marks_3 TEXT, marks_4 TEXT)')
+                conn1.commit()
+                cur1.execute('SELECT COUNT(*) FROM users_info_el WHERE user_name = ?', (callback.from_user.first_name,))
+                exists = cur1.fetchone()[0]
+                if not exists:
+                    cur1.execute('INSERT INTO users_info_el (user_name, mark_1, mark_2, mark_3, mark_4, marks_1, marks_2, marks_3, marks_4) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', (callback.from_user.first_name, '', '', '', '', '', '', '', ''))
+                    conn1.commit()
+                user_grades_response = session.get(user_data[6], headers=headers)
+                soup = BeautifulSoup(user_grades_response.text, 'html.parser')
+                num_l = soup.find('tbody').find_all('tr')
+                for num in num_l:
+                    lesson_value = num.get('lesson')
+                    name_l = soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_= 'grades-lesson').get_text()
+                    average_mark = soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_=re.compile(r'grades-average')).get_text() if soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_=re.compile(r'grades-average')) else ''
+                    if average_mark != '':
+                        marks_info += f"***{name_l}***:\nСредний балл: {average_mark}\n{'-'*60}\n"
+                cur1.execute('UPDATE users_info_el SET mark_1 = ? WHERE user_name = ?', (marks_info, callback.from_user.first_name))
+                conn1.commit()
+                marks_info = str()    
+                for num in num_l:
+                    lesson_value = num.get('lesson')
+                    name_l = soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_= 'grades-lesson').get_text()
+                    average_mark = soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_=re.compile(r'grades-average')).find_next('td', class_=re.compile(r'grades-average')).get_text() if soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_=re.compile(r'grades-average')).find_next('td', class_=re.compile(r'grades-average')) else ''
+                    if average_mark != '':
+                        marks_info += f"***{name_l}***:\nСредний балл: {average_mark}\n{'-'*60}\n"
+                cur1.execute('UPDATE users_info_el SET mark_2 = ? WHERE user_name = ?', (marks_info, callback.from_user.first_name))
+                conn1.commit()
+                marks_info = str()
+                for num in num_l:
+                    lesson_value = num.get('lesson')
+                    name_l = soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_= 'grades-lesson').get_text()
+                    average_mark = soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_=re.compile(r'grades-average')).get_text() if soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_=re.compile(r'grades-average')) else ''
+                    if average_mark:
+                        marks_info += f"***{name_l}***({average_mark}):\n"
+                        for marks in soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_="grades-marks").find_all('span'):
+                            marks_info += marks.get_text()
+                        marks_info += f"\n{'-'*60}\n"
+                cur1.execute('UPDATE users_info_el SET marks_1 = ? WHERE user_name = ?', (marks_info, callback.from_user.first_name))
+                conn1.commit()
+                marks_info = str()
+                for num in num_l:
+                    lesson_value = num.get('lesson')
+                    name_l = soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_= 'grades-lesson').get_text()
+                    average_mark = soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_=re.compile(r'grades-average')).find_next('td', class_=re.compile(r'grades-average')).get_text() if soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_=re.compile(r'grades-average')).find_next('td', class_=re.compile(r'grades-average')) else ''
+                    if average_mark:
+                        marks_info += f"***{name_l}***({average_mark}):\n"
+                        for marks in soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_="grades-marks").find_next('td', class_="grades-marks").find_all('span'):
+                            marks_info += marks.get_text()
+                        marks_info += f"\n{'-'*60}\n"
+                cur1.execute('UPDATE users_info_el SET marks_2 = ? WHERE user_name = ?', (marks_info, callback.from_user.first_name))
+                conn1.commit()
+                cur1.close()
+                conn1.close()
+                markup = telebot.types.InlineKeyboardMarkup()
+                markup.add(telebot.types.InlineKeyboardButton('Табель', callback_data = 'report_card'))
+                markup.row(telebot.types.InlineKeyboardButton('1 Полугодие', callback_data = 'first_half_a_year'), telebot.types.InlineKeyboardButton('2 Полугодие', callback_data = 'second_half_a_year'))
+                markup.add(telebot.types.InlineKeyboardButton('Табель с оценками', callback_data = 'report_card_with_grades'))
+                markup.add(telebot.types.InlineKeyboardButton('1 Полугодие', callback_data = 'First_half_a_year'), telebot.types.InlineKeyboardButton('2 Полугодие', callback_data = 'Second_half_a_year'))
+                bot.send_message(callback.message.chat.id, f"{emoji.emojize(':crystal_ball:')}{emoji.emojize(':minus:')}{emoji.emojize(':sparkles:')}Главное меню{emoji.emojize(':sparkles:')}{emoji.emojize(':minus:')}{emoji.emojize(':crystal_ball:')}", reply_markup=markup)
+            except AttributeError:
+                bot.send_message(callback.message.chat.id, 'Неверный логин/пароль. Зарегистрируйте свои данные с помощью команды /elschool, чтоб в будущем вы могли пользоваться данной функцией.')
         else:
-            try: 
+            try:
                 login_url = 'https://elschool.ru/logon/index' #URL для авторизации
                 credentials = { #Учетные данные
                     'login': f'{user_data[4]}',
@@ -137,31 +208,35 @@ def callback_message(callback):
             except TypeError: 
                 bot.send_message(callback.message.chat.id, "Авторизация не прошла.\nЗарегистрируйте свои данные с помощью команды /elschool, чтоб в будущем вы могли пользоваться данной функцией.")
     elif callback.data =='report_card':
-        pass
-    elif callback.data == 'first':
-        login_url = 'https://elschool.ru/logon/index' #URL для авторизации
-        credentials = { #Учетные данные
-            'login': f'{user_data[4]}',
-            'password': f'{user_data[5]}'
-            }
-        session = requests.Session()
-        session.headers.update(headers)
-        session.post(login_url, data=credentials)
-        marks_info = str()
-        user_data_url = 'https://elschool.ru/users/privateoffice'
-        user_grades_response = session.get(user_data[6], headers=headers)
-        soup = BeautifulSoup(user_grades_response.text, 'html.parser')
-        num_l = soup.find('tbody').find_all('tr')
-        for num in num_l:
-            lesson_value = num.get('lesson')
-            name_l = soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_= 'grades-lesson').get_text()
-            average_mark = soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_=re.compile(r'grades-average')).get_text() if soup.find('tr', {'lesson': f'{lesson_value}'}).find('td', class_=re.compile(r'grades-average')) else ''
-            marks_info += f"***{name_l}***:\nСредний балл: {average_mark}\n{'-'*60}\n"
-        bot.send_message(callback.message.chat.id, marks_info, "Markdown")
-    elif callback.data == 'second':
-        pass
-    elif callback.data =='report_card_with_grades':
-        pass
+        bot.send_message(callback.message.chat.id, 'Выберите полугодие')
+    elif callback.data == 'first_half_a_year':
+        conn1 = sqlite3.connect("users_elshool.sql") 
+        cur1 = conn1.cursor()
+        cur1.execute('SELECT *FROM users_info_el WHERE user_name = ?', (callback.from_user.first_name,))
+        bot.send_message(callback.message.chat.id, cur1.fetchone()[2], "Markdown")
+        cur1.close()
+        conn1.close()
+    elif callback.data == 'second_half_a_year':
+        conn1 = sqlite3.connect("users_elshool.sql") 
+        cur1 = conn1.cursor()
+        cur1.execute('SELECT *FROM users_info_el WHERE user_name = ?', (callback.from_user.first_name,))
+        bot.send_message(callback.message.chat.id, cur1.fetchone()[3], "Markdown")
+        cur1.close()
+        conn1.close()
+    elif callback.data =='First_half_a_year':
+        conn1 = sqlite3.connect("users_elshool.sql") 
+        cur1 = conn1.cursor()
+        cur1.execute('SELECT *FROM users_info_el WHERE user_name = ?', (callback.from_user.first_name,))
+        bot.send_message(callback.message.chat.id, cur1.fetchone()[6], "Markdown")
+        cur1.close()
+        conn1.close()
+    elif callback.data =='Second_half_a_year':
+        conn1 = sqlite3.connect("users_elshool.sql") 
+        cur1 = conn1.cursor()
+        cur1.execute('SELECT *FROM users_info_el WHERE user_name = ?', (callback.from_user.first_name,))
+        bot.send_message(callback.message.chat.id, cur1.fetchone()[7], "Markdown")
+        cur1.close()
+        conn1.close()    
     cur.close()
     conn.close()
 
@@ -171,7 +246,7 @@ def reg_elshool(message):
     bot.register_next_step_handler(message, reg_login)
 
 def reg_login(message):
-    conn = sqlite3.connect("user_telegram.sql")
+    conn = sqlite3.connect("users_telegram.sql")
     cur = conn.cursor()
     cur.execute('UPDATE users SET user_login = ? WHERE user_name = ?', (message.text, message.from_user.first_name))
     conn.commit()
@@ -181,7 +256,7 @@ def reg_login(message):
     bot.register_next_step_handler(message, reg_pass)
 
 def reg_pass(message):
-    conn = sqlite3.connect("user_telegram.sql")
+    conn = sqlite3.connect("users_telegram.sql")
     cur = conn.cursor()
     cur.execute('UPDATE users SET user_password = ? WHERE user_name = ?', (message.text, message.from_user.first_name))
     conn.commit()
@@ -191,7 +266,7 @@ def reg_pass(message):
 
 @bot.message_handler(commands=['weather'])
 def weather_city(message):
-    conn = sqlite3.connect("user_telegram.sql")
+    conn = sqlite3.connect("users_telegram.sql")
     cur = conn.cursor()
     cur.execute('SELECT *FROM users WHERE user_name = ?', (message.from_user.first_name,))
     city = cur.fetchone()[3]
@@ -206,7 +281,7 @@ def weather_city(message):
         conn.close()
 
 def user_city(message):
-    conn = sqlite3.connect("user_telegram.sql")
+    conn = sqlite3.connect("users_telegram.sql")
     cur = conn.cursor()
 
     cur.execute('UPDATE users SET user_city = ? WHERE user_name = ?', (message.text, message.from_user.first_name)) #city = message.text
@@ -219,6 +294,11 @@ def user_city(message):
 @bot.message_handler(commands=['help'])
 def information(message):
     bot.send_message(message.chat.id, "Если у вас возникли какие-то вопросы, либо нашли ошибку бота, напишите сюда ->@LucKyy0_0")
+
+@bot.message_handler(commands=['p'])
+def p(message):
+    for i in range(2):
+        bot.send_message(message.chat.id, 'p')
 
 @bot.message_handler(content_types='text')
 def i_message(message):
