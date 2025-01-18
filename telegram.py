@@ -10,6 +10,11 @@ from googletrans import Translator
 import asyncio
 import emoji
 import re
+import gc
+
+client = Client()
+history_chat = {}
+bot = telebot.TeleBot('7711898353:AAFYy2UEn9EXETPgEpGUgrdubIVgVqWKcuM') 
 
 async def translator1(n_city):
     translator = Translator()
@@ -45,17 +50,14 @@ def send_time():
     cur.execute('SELECT *FROM users')
     users = cur.fetchall()
     for i in range(len(users)):
-        bot.send_message(users[i][2], f"Доброе утро!{emoji.emojize(':sun:')}\nВремя вставать, сейчас 6:30.{emoji.emojize(':six-thirty:')}\n{weather(users[i][3], users[i][1]) if weather(users[i][3], users[i][1]) !=  "Город не найден, попробуйте установить его заново c помощью команды /weather" else 'Чтобы я смог оповещать вас о погоде, вам нужно зарегистрировать ваш город, с помощью команды /weather'}.\nЖелаю тебе удачного дня!{emoji.emojize(':four_leaf_clover:')} Не забудь про сегодняшние планы!")
+        bot.send_message(users[i][2], f"Доброе утро!{emoji.emojize(':sun:')}\nВремя вставать, сейчас 6:30.{emoji.emojize(':six-thirty:')}\n{weather(users[i][3], users[i][1]) if weather(users[i][3], users[i][1]) !=  "Город не найден, попробуйте установить его заново c помощью команды /weather" else 'Чтобы я смог оповещать вас о погоде, вам нужно зарегистрировать ваш город, с помощью команды\n/weather'}.\nЖелаю тебе удачного дня!{emoji.emojize(':four_leaf_clover:')} Не забудь про сегодняшние планы!")
     cur.close()
     conn.close()
 def run_time():
-    schedule.every().day.at("19:32").do(send_time) #Запланирование действия
+    schedule.every().day.at("06:30").do(send_time) #Запланирование действия
     while True:
         schedule.run_pending()
         time.sleep(10)
-client = Client()
-history_chat = {}
-bot = telebot.TeleBot('7711898353:AAFYy2UEn9EXETPgEpGUgrdubIVgVqWKcuM') 
 threading.Thread(target=run_time).start() #Параллельный поток
 
 @bot.message_handler(commands=['start'])
@@ -87,9 +89,15 @@ def start(message):
 
 @bot.message_handler(commands=['menu'])
 def menu(message):
+    conn = sqlite3.connect("users_telegram.sql")
+    cur = conn.cursor()
+    cur.execute('SELECT *FROM users WHERE user_name = ?', (message.from_user.first_name,))
+    user_data = cur.fetchone()
     markup = telebot.types.InlineKeyboardMarkup()
     markup.row(telebot.types.InlineKeyboardButton('Узнать погоду', callback_data='weather'), telebot.types.InlineKeyboardButton('Задать вопрос', callback_data='question'))
-    markup.row(telebot.types.InlineKeyboardButton('Открыть электронный дневник', callback_data='diary'))
+    markup.row(telebot.types.InlineKeyboardButton('Открыть электронный дневник' if user_data[6] else 'Зарегистрировать электронный дневник', callback_data='diary'))
+    cur.close()
+    conn.close()
     bot.send_message(message.chat.id, f"{emoji.emojize(":glowing_star:")} Вы открыли меню-панель! {emoji.emojize(":glowing_star:")}\nДобро пожаловать в мир возможностей! Здесь Вы найдете разнообразные функции, которые помогут Вам максимально эффективно использовать все возможности нашего приложения. Исследуйте, настраивайте и наслаждайтесь удобством, которое предлагает меню. Ваши действия теперь под контролем!", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda callback: True)
@@ -180,11 +188,16 @@ def callback_message(callback):
                 markup = telebot.types.InlineKeyboardMarkup()
                 markup.add(telebot.types.InlineKeyboardButton('Табель', callback_data = 'report_card'))
                 markup.row(telebot.types.InlineKeyboardButton('1 Полугодие', callback_data = 'first_half_a_year'), telebot.types.InlineKeyboardButton('2 Полугодие', callback_data = 'second_half_a_year'))
-                markup.add(telebot.types.InlineKeyboardButton('Табель с оценками', callback_data = 'report_card_with_grades'))
+                markup.add(telebot.types.InlineKeyboardButton('Табель с оценками', callback_data = 'report_card'))
                 markup.add(telebot.types.InlineKeyboardButton('1 Полугодие', callback_data = 'First_half_a_year'), telebot.types.InlineKeyboardButton('2 Полугодие', callback_data = 'Second_half_a_year'))
                 bot.send_message(callback.message.chat.id, f"{emoji.emojize(':crystal_ball:')}{emoji.emojize(':minus:')}{emoji.emojize(':sparkles:')}Главное меню{emoji.emojize(':sparkles:')}{emoji.emojize(':minus:')}{emoji.emojize(':crystal_ball:')}", reply_markup=markup)
             except AttributeError:
                 bot.send_message(callback.message.chat.id, 'Неверный логин/пароль. Зарегистрируйте свои данные с помощью команды /elschool, чтоб в будущем вы могли пользоваться данной функцией.')
+                conn = sqlite3.connect("users_telegram.sql")
+                cur = conn.cursor()
+                cur.execute('UPDATE users SET user_url_el = ? WHERE user_name = ?', (None, callback.from_user.first_name))
+                conn.commit()
+
         else:
             try:
                 login_url = 'https://elschool.ru/logon/index' #URL для авторизации
@@ -271,11 +284,11 @@ def weather_city(message):
     cur.execute('SELECT *FROM users WHERE user_name = ?', (message.from_user.first_name,))
     city = cur.fetchone()[3]
     if city is not None:
-        bot.send_message(message.chat.id, weather(city, message.from_user.first_name))
+        bot.reply_to(message, weather(city, message.from_user.first_name))
         cur.close()
         conn.close()
     else:
-        bot.send_message(message.chat.id, "Напишите ваш город:")
+        bot.reply_to(message, "Напишите ваш город:")
         bot.register_next_step_handler(message, user_city)
         cur.close()
         conn.close()
@@ -295,29 +308,29 @@ def user_city(message):
 def information(message):
     bot.send_message(message.chat.id, "Если у вас возникли какие-то вопросы, либо нашли ошибку бота, напишите сюда ->@LucKyy0_0")
 
-@bot.message_handler(commands=['p'])
-def p(message):
-    for i in range(2):
-        bot.send_message(message.chat.id, 'p')
-
 @bot.message_handler(content_types='text')
 def i_message(message):
-    user_text = message.text + "\nНапиши ответ на русском!"
+    user_text = message.text.strip()
     user_id = message.from_user.id
-
+    if len(history_chat) >= 5:
+        history_chat[user_id] = [{"role": "system", "content": "Пожалуйста, ответь на вопрос пользователя четко и понятно на русском."}]
     if user_id not in history_chat:
-        history_chat[user_id] = []
-
+        history_chat[user_id] = [{"role": "system", "content": "Пожалуйста, ответь на вопрос пользователя четко и понятно на русском."}]
     history_chat[user_id].append({"role": "user", "content": user_text})
 
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=history_chat[user_id]
-    )
-
-    gpt_response = response.choices[0].message.content
-    bot.send_message(message.chat.id, gpt_response, "Markdown")
-
-    history_chat[user_id].append({"role": "assistant", "content": gpt_response})
-
+    prompt = f'Пользователь спросил: \'{user_text}\'. Ответь четко и ясно на его вопрос на русском. Если текст тебе не понятен или он не имеет смысловой и логической нагрузки, сообщи об этом пользователю.' 
+    prompt += '\n Истрия беседы:\n' +'\n'.join([item["content"] for item in history_chat[user_id]])
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}],
+        )
+        gpt_response = response.choices[0].message.content
+        history_chat[user_id].append({"role": "assistant", "content": gpt_response})
+        bot.reply_to(message, gpt_response, parse_mode="Markdown")
+    except requests.exceptions.ReadTimeout:
+        gpt_response = None
+        gc.collect()
+    except Exception as e:
+        bot.reply_to(message, "Произошла проблема с генерацией ответа.\nПопробуйте написать вопрос проще и понятнее!")
 bot.polling(none_stop=True)
