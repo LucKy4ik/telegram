@@ -326,7 +326,7 @@ def i_message(message):
                 assistant_message = response['choices'][0]['message']['content']
         else:
                 assistant_message = str(response)
-    except (requests.exceptions.ReadTimeout, ConnectionError):
+    except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError, ConnectionResetError):
         bot.reply_to(message, "Ошибка: Не удалось установить соединение с сервером Telegram. Попробуйте позже.")
     except telebot.apihelper.ApiTelegramException:
         bot.reply_to(message, "Ошибка: Проблема с API Telegram. Попробуйте позже.")
