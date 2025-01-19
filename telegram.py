@@ -10,7 +10,6 @@ from googletrans import Translator
 import asyncio
 import emoji
 import re
-import gc
 
 client = Client()
 history_chat = {}
@@ -330,7 +329,6 @@ def i_message(message):
         bot.reply_to(message, gpt_response, parse_mode="Markdown")
     except requests.exceptions.ReadTimeout:
         gpt_response = None
-        gc.collect()
     except Exception as e:
         bot.reply_to(message, "Произошла проблема с генерацией ответа.\nПопробуйте написать вопрос проще и понятнее!")
 bot.polling(none_stop=True)
