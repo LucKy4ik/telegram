@@ -1,4 +1,4 @@
-from g4f.client import Client
+import g4f
 import telebot 
 import requests
 from bs4 import BeautifulSoup
@@ -10,8 +10,8 @@ from googletrans import Translator
 import asyncio
 import emoji
 import re
+import html
 
-client = Client()
 history_chat = {}
 bot = telebot.TeleBot('7711898353:AAFYy2UEn9EXETPgEpGUgrdubIVgVqWKcuM') 
 
@@ -77,7 +77,8 @@ def start(message):
         conn.commit()
     cur.execute('SELECT *FROM users')
     users = cur.fetchall()
-    print(users) 
+    for i in users:
+        print(i)
     cur.close()
     conn.close()
 
@@ -309,26 +310,28 @@ def information(message):
 
 @bot.message_handler(content_types='text')
 def i_message(message):
-    user_text = message.text.strip()
-    user_id = message.from_user.id
-    if len(history_chat) >= 5:
-        history_chat[user_id] = [{"role": "system", "content": "Пожалуйста, ответь на вопрос пользователя четко и понятно на русском."}]
-    if user_id not in history_chat:
-        history_chat[user_id] = [{"role": "system", "content": "Пожалуйста, ответь на вопрос пользователя четко и понятно на русском."}]
-    history_chat[user_id].append({"role": "user", "content": user_text})
+    if message.from_user.id not in history_chat:
+        history_chat[message.from_user.id] = [{"role": "system", "content": "Пожалуйста, ответь на вопрос пользователя четко и понятно на русском."}]
+    history_chat[message.from_user.id].append({"role": "user", "content": message.text.strip()})
 
-    prompt = f'Пользователь спросил: \'{user_text}\'. Ответь четко и ясно на его вопрос на русском. Если текст тебе не понятен или он не имеет смысловой и логической нагрузки, сообщи об этом пользователю.' 
-    prompt += '\n Истрия беседы:\n' +'\n'.join([item["content"] for item in history_chat[user_id]])
+    prompt = f"Пользователь спросил: '{message.text.strip()}'. Ответь четко и ясно на его вопрос на русском."
+    prompt += "\nИстория беседы:\n" + "\n".join([item["content"] for item in history_chat[message.from_user.id]])
     try:
-        response = client.chat.completions.create(
+        response = g4f.ChatCompletion.create(
             model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": prompt}]
         )
-        gpt_response = response.choices[0].message.content
-        history_chat[user_id].append({"role": "assistant", "content": gpt_response})
-        bot.reply_to(message, gpt_response, parse_mode="Markdown")
-    except requests.exceptions.ReadTimeout:
-        gpt_response = None
-    except Exception as e:
-        bot.reply_to(message, "Произошла проблема с генерацией ответа.\nПопробуйте написать вопрос проще и понятнее!")
+        if isinstance(response, dict) and 'choices' in response:
+                assistant_message = response['choices'][0]['message']['content']
+        else:
+                assistant_message = str(response)
+
+    except (Exception, telebot.apihelper.ApiTelegramException):
+        assistant_message = f"Произошла ошибка при генерации ответа. Напишите ваш вопрос точнее и проще."
+
+    history_chat[message.from_user.id].append({"role": "assistant", "content": assistant_message})
+
+    decoded_response = html.unescape(assistant_message)
+    bot.reply_to(message, decoded_response, parse_mode="Markdown")
+
 bot.polling(none_stop=True)
