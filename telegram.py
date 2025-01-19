@@ -319,19 +319,24 @@ def i_message(message):
     try:
         response = g4f.ChatCompletion.create(
             model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": prompt}],
+            timeout=5
         )
         if isinstance(response, dict) and 'choices' in response:
                 assistant_message = response['choices'][0]['message']['content']
         else:
                 assistant_message = str(response)
-
-    except (Exception, telebot.apihelper.ApiTelegramException):
-        assistant_message = f"Произошла ошибка при генерации ответа. Напишите ваш вопрос точнее и проще."
+    except (requests.exceptions.ReadTimeout, ConnectionError):
+        bot.reply_to(message, "Ошибка: Не удалось установить соединение с сервером Telegram. Попробуйте позже.")
+    except telebot.apihelper.ApiTelegramException:
+        bot.reply_to(message, "Ошибка: Проблема с API Telegram. Попробуйте позже.")
+    except (Exception, telebot.apihelper.ApiTelegramException) as e:
+        assistant_message = f"Произошла ошибка при генерации ответа. Напишите ваш вопрос точнее и проще. Отправьте данную ошибку( {e} ) сюда -> @LucKyy0_0"
 
     history_chat[message.from_user.id].append({"role": "assistant", "content": assistant_message})
 
     decoded_response = html.unescape(assistant_message)
+    time.sleep(0.5)
     bot.reply_to(message, decoded_response, parse_mode="Markdown")
 
-bot.polling(none_stop=True)
+bot.polling(none_stop=True, timeout=60)
