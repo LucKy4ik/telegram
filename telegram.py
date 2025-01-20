@@ -14,6 +14,7 @@ import html
 
 history_chat = {}
 bot = telebot.TeleBot('7711898353:AAFYy2UEn9EXETPgEpGUgrdubIVgVqWKcuM') 
+user_name = str()
 
 async def translator1(n_city):
     translator = Translator()
@@ -32,7 +33,7 @@ def weather(user_city, user_name):
         weather_condition = soup.find("div", class_="link__feelings fact__feelings").find("span", class_="temp__value temp__value_with-unit").get_text()
         #humidity = soup.find("div", class_="term term_orient_v fact__humidity").find("span", class_="a11y-hidden").get_text()
         wind = soup.find("div", class_="term term_orient_v fact__wind-speed").find("span", class_="wind-speed").get_text()
-        return f"Температура: {temperature}°C{emoji.emojize(':thermometer:')}, но ощущается как {weather_condition}°C{emoji.emojize(':face_with_rolling_eyes:')}.\nВетер: {wind}м/с.{emoji.emojize(':dashing_away:')}"   
+        return f"Температура: {temperature}°C{emoji.emojize(':thermometer:')}, но ощущается как {weather_condition}°C.\nВетер: {wind}м/с.{emoji.emojize(':dashing_away:')}"   
     except AttributeError:
         conn = sqlite3.connect("users_telegram.sql")
         cur = conn.cursor()
@@ -49,11 +50,11 @@ def send_time():
     cur.execute('SELECT *FROM users')
     users = cur.fetchall()
     for i in range(len(users)):
-        bot.send_message(users[i][2], f"Доброе утро!{emoji.emojize(':sun:')}\nВремя вставать, сейчас 6:30.{emoji.emojize(':six-thirty:')}\n{weather(users[i][3], users[i][1]) if weather(users[i][3], users[i][1]) !=  "Город не найден, попробуйте установить его заново c помощью команды /weather" else 'Чтобы я смог оповещать вас о погоде, вам нужно зарегистрировать ваш город, с помощью команды\n/weather'}.\nЖелаю тебе удачного дня!{emoji.emojize(':four_leaf_clover:')} Не забудь про сегодняшние планы!")
+        bot.send_message(users[i][2], f"Доброе утро!{emoji.emojize(':sun:')}\nВремя вставать, сейчас 7:25.{emoji.emojize(':six-thirty:')}\n{weather(users[i][3], users[i][1]) if weather(users[i][3], users[i][1]) !=  "Город не найден, попробуйте установить его заново c помощью команды /weather" else 'Чтобы я смог оповещать вас о погоде, вам нужно зарегистрировать ваш город, с помощью команды\n/weather'}.\nЖелаю тебе удачного дня!{emoji.emojize(':four_leaf_clover:')} Не забудь про сегодняшние планы!")
     cur.close()
     conn.close()
 def run_time():
-    schedule.every().day.at("06:30").do(send_time) #Запланирование действия
+    schedule.every().day.at("05:25").do(send_time) #Запланирование действия
     while True:
         schedule.run_pending()
         time.sleep(10)
@@ -320,7 +321,6 @@ def i_message(message):
         response = g4f.ChatCompletion.create(
             model="gpt-4o",
             messages=[{"role": "user", "content": prompt}],
-            timeout=5
         )
         if isinstance(response, dict) and 'choices' in response:
                 assistant_message = response['choices'][0]['message']['content']
@@ -336,7 +336,6 @@ def i_message(message):
     history_chat[message.from_user.id].append({"role": "assistant", "content": assistant_message})
 
     decoded_response = html.unescape(assistant_message)
-    time.sleep(0.5)
-    bot.reply_to(message, decoded_response, parse_mode="Markdown")
+    bot.send_message(message.chat.id, decoded_response, parse_mode="Markdown")
 
 bot.polling(none_stop=True, timeout=60)
